@@ -1,0 +1,528 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+# ```{r}
+# install.packages('readxl')
+# install.packages('ggplot2')
+# install.packages('dplyr')
+# install.packages("DataExplorer")
+# install.packages("caTools")
+# install.packages("rpart.plot")
+# install.packages("pROC")
+# install.packages("caret")
+# ```
+
+#Problem Statement : Does the customer will take personal loan 
+```{r}
+
+setwd("C:/Users/nupur/Desktop/DataMining")
+
+#Reading data
+library(readxl)
+bankData<-read_excel("Thera Bank-Data Set.xlsx",2)
+
+```
+#Understanding data Structure
+```{r}
+dim(bankData) #5000 rows and 14 columns
+str(bankData)
+
+```
+```{r}
+names(bankData)
+head(bankData)
+```
+```{r}
+prop.table(table(bankData$`Personal Loan`)) #90 percent ppl didnt take the loan after campaign
+
+```
+
+#Converting type of variables
+```{r}
+bankData$Education<-as.factor(bankData$Education)
+bankData$`Personal Loan`<-as.factor(bankData$`Personal Loan`)
+bankData$`Securities Account`<-as.factor(bankData$`Securities Account`)
+bankData$`CD Account`<-as.factor(bankData$`CD Account`)
+bankData$Online<-as.factor(bankData$Online)
+bankData$CreditCard<-as.factor(bankData$CreditCard)
+bankData$`Family members`<-as.factor(bankData$`Family members`)
+bankData$`ZIP Code`<-as.factor(bankData$`ZIP Code`)
+
+str(bankData)
+#check for any duplicate rows
+any(duplicated(bankData))
+
+#change name of colmns : Different ways to  change column name
+# we can trim all col names
+names(bankData)<-gsub("\\s","_",names(bankData)) #subsitutes space by underscore
+colnames(bankData)
+```
+```{r}
+#This gives, each column has :how many missing values .
+colSums(is.na(bankData))  #FamilyMembers has 18 missing values
+#Name of variables which have missing values
+colnames(bankData)[colSums(is.na(bankData)) > 0]
+
+
+```
+
+```{r}
+#EDA
+#Univariate 
+summary(bankData$`Age_(in_years)`)  #Age is between 23 - 67
+summary(bankData$`Experience_(in_years)`)
+summary(bankData$`Income_(in_K/month)`)
+summary(bankData$ZIP_Code) ##of no use 
+barplot(table(bankData$Family_members))
+summary(bankData$CCAvg) 
+summary(bankData$Education)
+summary(bankData$Mortgage)
+typeof(bankData$Mortgage)
+boxplot(bankData$Mortgage)     #it has outliers
+barplot(table(bankData$Education),horiz = TRUE)
+boxplot(bankData$`Age_(in_years)`)
+boxplot(bankData$`Experience_(in_years)`)
+#boxplot(bankData$`Income_(in_K/month)`)  #outliers
+boxplot((bankData$CCAvg)) # There are many outliers , they can take loans.
+barplot(prop.table(table(bankData$Personal_Loan)))
+barplot(table(bankData$Securities_Account))  #very less % has security acc
+barplot(table(bankData$CD_Account))
+barplot(table(bankData$Online))   # many ppl use internet banking
+barplot(prop.table(table(bankData$CreditCard)))
+prop.table(table(bankData$CreditCard)) #70% ppl dont have credit card.
+
+```
+```{r}
+#Bivariate EDA
+
+library(ggplot2)
+ggplot(bankData , aes(x= bankData$Personal_Loan,y=bankData$Mortgage))+
+  geom_boxplot()
+
+ggplot(bankData , aes(x= bankData$Personal_Loan,y=bankData$`Experience_(in_years)`))+
+  geom_boxplot()     #Prof Experience doesnt matter for personal loan
+
+ggplot(bankData , aes(x= bankData$Personal_Loan,y=bankData$`Age_(in_years)`))+
+  geom_boxplot()     #Age doesnt matter for personal loan
+
+ggplot(bankData,aes(y=bankData$`Age_(in_years)`,x=bankData$Family_members))+
+  geom_boxplot()
+
+
+```
+
+
+```{r}
+#Target Variable : Personal_Loan
+attach(bankData)
+ggplot(bankData,aes(x=Personal_Loan,y=`Income_(in_K/month)`))+
+  geom_boxplot(aes(fill=Education))
+
+```
+
+
+```{r}
+ggplot(bankData,aes(x=Personal_Loan,y=`Income_(in_K/month)`))+
+  geom_boxplot(aes(fill= CD_Account))
+```
+
+```{r}
+ggplot(bankData,aes(x=Personal_Loan,y=`Income_(in_K/month)`))+
+  geom_boxplot(aes(fill= CD_Account))
+```
+
+```{r}
+library(ggplot2)
+ggplot(bankData,aes(x=Education,fill=Personal_Loan))+
+  geom_bar()
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(bankData,aes(x=CCAvg,y=`Income_(in_K/month)`,col=Education))+
+  geom_point()+
+  facet_grid(.~Personal_Loan)
+```
+
+
+```{r}
+ggplot(bankData,aes(x=CCAvg,y=`Income_(in_K/month)`,col=Personal_Loan))+
+  geom_point()+
+  facet_grid(.~CD_Account)
+```
+
+
+```{r}
+ggplot(bankData,aes(x=Mortgage,fill=Personal_Loan))+
+  geom_density()
+```
+
+
+```{r}
+ggplot(bankData,aes(x=`Age_(in_years)`,y=Mortgage,col=Personal_Loan))+
+  geom_point()
+```
+
+```{r}
+
+names(bankData)
+#Data Cleaning 
+"
+1.Experience in years : has negative values.
+2.Missing values in FamilyMembers.
+3.Remove Unnecessary variables which cant help us in prediction like 'Id'
+4.Income_(in_K_per_month has outliers.
+5.average spending on credit card has many outliers:CCAvg
+
+"
+library(dplyr)
+
+bankData %>%
+  filter(is.na(bankData$Family_members))
+
+bankData %>%
+  filter(bankData$`Experience_(in_years)`<0)
+#Conclude: There are 52 rows where experience is negative : Exp cant be negative # so we will mutate as abs value of exp : considering it to be typing err
+
+bankData$`Experience_(in_years)`=abs(bankData$`Experience_(in_years)`)
+bankData<-bankData[,-c(1,5)]
+
+
+```
+
+```{r}
+"
+For Missing values in FamilyMembers.lets build a model to predict the family members for given data" 
+
+
+#"For now , just mutate it as 1 : considering they are single person"
+bankData[is.na(bankData$Family_members),"Family_members"] <- factor(1)
+
+#check if missing value got replaced.
+colSums(is.na(bankData))
+
+```
+
+```{r}
+
+library(DataExplorer)
+plot_intro(bankData)
+plot_missing(bankData)
+plot_histogram(bankData)
+plot_boxplot(bankData,by="Personal_Loan")
+plot_bar(bankData)
+
+```
+
+#Splitting the data into test and traindata
+```{r}
+library(caTools)
+
+set.seed(127)
+
+split=sample.split(bankData$Personal_Loan ,SplitRatio = 0.7)
+head(bankData)
+trData<-subset(bankData,split==TRUE)
+tstData<-subset(bankData,split==FALSE)
+
+dim(trData)
+dim(tstData)
+#Check if the proportions of levels of PersonalLoan is same in test and train data to avoid baising
+prop.table(table(trData$Personal_Loan))
+prop.table(table(tstData$Personal_Loan))
+```
+
+#Step1 : First Cart Model without any control parameters  : it self pruned it to the max level
+```{r}
+library(rpart)
+library(rpart.plot)
+tree<-rpart(formula = Personal_Loan ~ .,data = trData)
+printcp(tree)
+rpart.plot(tree,cex=0.8)
+plot(tree$cptable)
+```
+
+
+#To get granular details of tree : built tree with control parameters
+```{r}
+#Initial Tree build
+library(rpart)
+library(rpart.plot)
+set.seed(127)
+trData$predicted.class=NULL
+trData$predicted.score=NULL
+
+tree<-rpart(formula = Personal_Loan ~ .,data = trData, control = rpart.control(minbucket = 5, cp = .000001))
+rpart.plot(tree,cex=0.8)
+
+
+```
+
+
+#Finding the bestcp to prune the tree
+```{r}
+print(tree$cptable)
+bestcp<-tree$cptable[which.min(tree$cptable[,"xerror"]),"CP"]
+bestcp
+#pruning the tree
+prunedTree<-prune(tree,cp=0.00298)
+rpart.plot(prunedTree,cex=0.6)
+
+```
+
+
+#Understanding Variable Importance
+
+```{r}
+
+prunedTree$variable.importance
+
+VI_cart=data.frame(prunedTree$variable.importance)
+VI_cart
+
+```
+#Prediction using CART for train Data
+#Creating Confusion Matrix
+
+```{r}
+set.seed(127)
+trData$predict.class<-predict(prunedTree,data=trData,type="class")
+trData$predict.score<-predict(prunedTree,data=trData)
+
+
+cfMatrix<-table(trData$Personal_Loan,trData$predict.class)
+trueNegative<-cfMatrix[1,1]
+falsePositive<-cfMatrix[1,2]
+falseNegative<-cfMatrix[2,1]
+truePositive<-cfMatrix[2,2]
+
+cfMatrix
+
+
+```
+
+#Performance Measures for train Data
+```{r}
+sensetivity=truePositive/(truePositive+falseNegative)
+sprintf("Senstivity: %s", sensetivity)
+specificity=trueNegative/(trueNegative+falsePositive)
+sprintf("Specificity: %s", specificity)
+accuracy=(truePositive+trueNegative)/(truePositive+trueNegative+falsePositive+falseNegative)
+sprintf("Accuracy: %s", accuracy)
+```
+
+#Prediction for test Data
+
+```{r}
+tstData$predict.class=predict(prunedTree, tstData, type = "class")
+tstData$predict.score=predict(prunedTree,tstData)
+
+cfMatrix_test<-table(tstData$Personal_Loan,tstData$predict.class)
+trueNegative_test<-cfMatrix_test[1,1]
+falsePositive_test<-cfMatrix_test[1,2]
+falseNegative_test<-cfMatrix_test[2,1]
+truePositive_test<-cfMatrix_test[2,2]
+cfMatrix_test
+```
+
+
+
+#Performance Measure for test Data
+
+```{r}
+sensetivity_test=truePositive_test/(truePositive_test+falseNegative_test)
+sprintf("Senstivity: %s", sensetivity_test)
+specificity_test=trueNegative_test/(trueNegative_test+falsePositive_test)
+sprintf("Specificity: %s", specificity_test)
+accuracy_test=(truePositive_test+trueNegative_test)/(truePositive_test+trueNegative_test+falsePositive_test+falseNegative_test)
+sprintf("Accuracy: %s", accuracy_test)
+```
+
+#Combining Model Performance of test and train
+```{r}
+df_results_train = data.frame(accuracy, sensetivity, specificity)
+names(df_results_train) = c("ACC", "SENS", "SPEC")
+df_results_test = data.frame(accuracy_test, sensetivity_test, specificity_test)
+names(df_results_test) = c("ACC", "SENS", "SPEC")
+
+?rbind
+df_fin =rbind(df_results_train, df_results_test)
+row.names(df_fin) = c('tree_full_train', 'tree_full_test')
+df_fin
+```
+##Calculating AUC with best model
+```{r}
+## Predict using the CART model
+trData$predict.class=predict(prunedTree,trData,type="class")
+trData$predict.score=predict(prunedTree,trData)
+tstData$predict.score=predict(prunedTree,tstData)
+```
+
+```{r}
+
+library(pROC)
+
+roc_obj = roc(trData$Personal_Loan, trData$predict.score[,2])
+
+
+plot(roc_obj, print.auc = T)
+
+roc_obj = roc(tstData$Personal_Loan, tstData$predict.score[,2])
+
+
+plot(roc_obj, print.auc = T)
+```
+
+  
+#####Random Forest####
+
+#Step1: Trying to find best mtry by gridsearch
+```{r}
+#finding mtry
+
+library(caret)
+metric1="Accuracy"
+tunegrid1 <- expand.grid(.mtry=c(1:12))
+control=trainControl(search = "grid")
+rf_gridsearch<-train(Personal_Loan~., data = trData, method ="rf",metric= metric1, tuneGrid =tunegrid1,trControl=control,ntree=500)
+print(rf_gridsearch)
+plot(rf_gridsearch,metric="Accuracy")
+plot(rf_gridsearch,metric="Kappa")
+```
+
+
+```{r}
+library(randomForest)
+set.seed(127)
+trData$predict.class=NULL
+trData$predict.score=NULL
+tstData$predict.class=NULL
+tstData$predict.score=NULL
+attach(trData)
+rf2<-randomForest(Personal_Loan~., data=trData,ntree=500,mtry=4,importance=TRUE)
+rf2
+```
+
+#For Bringing down the false negative: changed cutoff to 70:30: Final RandomForest Model
+```{r}
+
+head(trData)
+set.seed(420)
+library(randomForest)
+rf3<-randomForest(Personal_Loan ~ ., data=trData,ntree=500,mtry=4,importance=TRUE,cutoff=c(0.7,0.3))
+rf3
+
+```
+
+
+#Plot Random Forest Tree for 100th tree
+```{r}
+require(randomForest)
+k <- 100
+getTree(randomForest(Personal_Loan ~ ., data=trData,ntree=500,mtry=4,importance=TRUE,cutoff=c(0.7,0.3)), k, labelVar = TRUE)
+
+```
+
+
+
+
+
+
+
+#Prediction for train data
+```{r}
+trData$predict.class=NULL
+trData$predict.score=NULL
+
+trData$predicted.class<-predict(rf3,trData,type="class")
+trData$predicted.score<-predict(rf3,trData)
+
+cfMatrix1<-table(trData$Personal_Loan,trData$predicted.class)
+trueNegative<-cfMatrix1[1,1]
+falsePositive<-cfMatrix1[1,2]
+falseNegative<-cfMatrix1[2,1]
+truePositive<-cfMatrix1[2,2]
+
+cfMatrix1
+```
+
+
+#Performance Measure for train Data
+
+```{r}
+sensetivityrf_tr=truePositive/(truePositive+falseNegative)
+sprintf("Senstivity: %s", sensetivityrf_tr)
+specificityrf_tr=trueNegative/(trueNegative+falsePositive)
+sprintf("Specificity: %s", specificityrf_tr)
+accuracyrf_tr=(truePositive+trueNegative)/(truePositive+trueNegative+falsePositive+falseNegative)
+sprintf("Accuracy: %s", accuracyrf_tr)
+```
+
+#Prediction for test Data
+
+```{r}
+tstData$predicted.class<-NULL
+tstData$predicted.score=NULL
+head(tstData)
+tstData$predicted.class<-predict(rf3,tstData,type="class")
+tstData$predicted.score<-predict(rf3,tstData)
+cfMatrix1_tst<-table(tstData$Personal_Loan,tstData$predicted.class)
+trueNegative1_tst<-cfMatrix1_tst[1,1]
+falsePositive1_tst<-cfMatrix1_tst[1,2]
+falseNegative1_tst<-cfMatrix1_tst[2,1]
+truePositive1_tst<-cfMatrix1_tst[2,2]
+cfMatrix1_tst
+```
+
+
+
+
+
+#Performance Measure for test Data
+
+```{r}
+sensetivityrf_test=truePositive1_tst/(truePositive1_tst+falseNegative1_tst)
+sprintf("Senstivity: %s", sensetivityrf_test)
+specificityrf_test=trueNegative1_tst/(trueNegative1_tst+falsePositive1_tst)
+sprintf("Specificity: %s", specificityrf_test)
+accuracyrf_test=(truePositive1_tst+trueNegative1_tst)/(truePositive1_tst+trueNegative1_tst+falsePositive1_tst+falseNegative1_tst)
+sprintf("Accuracy: %s", accuracyrf_test)
+```
+#Model Performance of Test and Train
+```{r}
+df_results_train = data.frame(accuracyrf_tr, sensetivityrf_tr, specificityrf_tr)
+names(df_results_train) = c("ACC", "SENS", "SPEC")
+df_results_test = data.frame(accuracyrf_test, sensetivityrf_test, specificityrf_test)
+names(df_results_test) = c("ACC", "SENS", "SPEC")
+
+?rbind
+df_fin =rbind(df_results_train, df_results_test)
+row.names(df_fin) = c('tree_full_train', 'tree_full_test')
+df_fin
+```
+
+
+#Calculating AUC with best model(rf3)
+
+```{r}
+
+trData$predicted.class=predict(rf3,trData,type="class")
+trData$predicted.score=predict(rf3,trData,type="prob")
+tstData$predicted.score=predict(rf3,tstData,type="prob")
+```
+
+
+```{r}
+library(pROC)
+roc_obj_rf1 = roc(trData$Personal_Loan, trData$predicted.score[,2])
+plot(roc_obj_rf1, print.auc = T)
+roc_obj_rf2 = roc(tstData$Personal_Loan, tstData$predicted.score[,2])
+plot(roc_obj_rf2, print.auc = T)
+```
+
+
